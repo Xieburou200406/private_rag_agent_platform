@@ -17,12 +17,10 @@ RUN set -eux; \
 WORKDIR /app
 COPY . .
 
-# 开发占位：编译 health stub，正式网关完成后改为 cmake 编译 gateway_server
-RUN gcc -O2 -o /usr/local/bin/dev_health_stub dev_health_stub.c
-
-# 生产阶段取消注释以下两行，并将 CMD 改为 ./build/gateway_server
-# RUN mkdir -p build && cd build && cmake .. && make -j"$(nproc)"
+# 镜像构建阶段编译 gateway_server，安装到 /usr/local/bin（避免 /app 卷挂载覆盖二进制）
+RUN mkdir -p build && cd build && cmake .. && make -j"$(nproc)" && \
+    cp gateway_server /usr/local/bin/gateway_server
 
 EXPOSE 8080
 
-CMD ["/usr/local/bin/dev_health_stub"]
+CMD ["/usr/local/bin/gateway_server"]
