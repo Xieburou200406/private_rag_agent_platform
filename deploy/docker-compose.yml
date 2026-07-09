@@ -1,0 +1,173 @@
+# 持久化数据卷
+volumes:
+  mysql_data:
+  redis_data:
+  milvus_data:
+  platform_logs:
+  docs_img:
+
+# 统一内网桥接网络，所有容器互通
+networks:
+  rag_bridge_net:
+    driver: bridge
+
+# 在 deploy/ 目录执行：docker compose up -d
+services:
+  # ========== 第一层：C++高性能网关（流量接入层） ==========
+  cpp_gateway:
+    build:
+      context: ../cpp_gateway
+      dockerfile: Dockerfile
+    container_name: cpp_gateway
+    env_file: .env
+    volumes:
+      - ../cpp_gateway:/app
+      - platform_logs:/app/logs
+    expose:
+      - "${GATEWAY_LISTEN_PORT:-8080}"
+    networks:
+      - rag_bridge_net
+    depends_on:
+      mysql:
+        condition: service_started
+      redis:
+        condition: service_started
+      milvus:
+        condition: service_started
+    restart: unless-stopped
+
+  # ========== 第二层：Django业务调度持久层 ==========
+  django_backend:
+    build:
+      context: ../backend_django
+      dockerfile: Dockerfile
+    container_name: django_backend
+    env_file: .env
+    volumes:
+      - ../backend_django:/app
+      - platform_logs:/app/logs
+    expose:
+      - "${DJANGO_LISTEN_PORT:-8000}"
+    networks:
+      - rag_bridge_net
+    depends_on:
+      mysql:
+        condition: service_started
+      redis:
+        condition: service_started
+      milvus:
+        condition: service_started
+    restart: unless-stopped
+
+  # ========== 第三层：LLM多智能体RAG引擎（内网仅Django调用） ==========
+  agent_engine:
+    build:
+      context: ../agent_engine
+      dockerfile: Dockerfile
+    container_name: agent_engine
+    env_file: .env
+    volumes:
+      - ../agent_engine:/app
+      - platform_logs:/app/logs
+    expose:
+      - "${AGENT_LISTEN_PORT:-8001}"
+    networks:
+      - rag_bridge_net
+    depends_on:
+      milvus:
+        condition: service_started
+    restart: unless-stopped
+
+  # ========== 第四层：离线量化评估模块（无线上流量） ==========
+  evaluation_module:
+    build:
+      context: ../evaluation_module
+      dockerfile: Dockerfile
+    container_name: evaluation_module
+    env_file: .env
+    volumes:
+      - ../evaluation_module:/app
+      - platform_logs:/app/logs
+    networks:
+      - rag_bridge_net
+    depends_on:
+      mysql:
+        condition: service_started
+      milvus:
+        condition: service_started
+      django_backend:
+        condition: service_started
+      cpp_gateway:
+        condition: service_started
+    profiles:
+      - eval
+    restart: "no"
+
+  # ========== 中间件：MySQL 结构化数据持久化 ==========
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    env_file: .env
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init_sql:/docker-entrypoint-initdb.d:ro
+    expose:
+      - "3306"
+    networks:
+      - rag_bridge_net
+    restart: unless-stopped
+
+  # ========== 中间件：Redis 缓存/会话/异步队列 ==========
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    env_file: .env
+    command: redis-server /etc/redis/redis.conf --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/etc/redis/redis.conf:ro
+    expose:
+      - "6379"
+    networks:
+      - rag_bridge_net
+    restart: unless-stopped
+
+  # ========== 中间件：Milvus向量库（standalone 单机模式） ==========
+  milvus:
+    image: milvusdb/milvus:v2.4.0
+    container_name: milvus
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      COMMON_STORAGETYPE: local
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - milvus_data:/var/lib/milvus
+    expose:
+      - "19530"
+    networks:
+      - rag_bridge_net
+    restart: unless-stopped
+
+  # ========== Nginx 统一流量入口 ==========
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    env_file: .env
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - platform_logs:/var/log/nginx
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+    networks:
+      - rag_bridge_net
+    depends_on:
+      - cpp_gateway
+      - django_backend
+    restart: unless-stopped

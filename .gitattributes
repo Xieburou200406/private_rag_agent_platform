@@ -1,0 +1,4 @@
+# 强制 shell / 配置文件在 Windows 检出时保持 LF，避免 Redis/Nginx 容器解析失败
+deploy/redis/redis.conf text eol=lf
+deploy/nginx/nginx.conf text eol=lf
+deploy/scripts/*.sh text eol=lf
