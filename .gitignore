@@ -1,0 +1,26 @@
+# 环境密钥文件
+.env
+*.env.local
+
+# 编译产物 C++网关
+cpp_gateway/build/
+cpp_gateway/cmake-build-*/
+
+# Python缓存文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv/
+logs/
+
+# 本地Docker临时文件
+*.tar
+*.gz
+.vscode/
+.idea/
+
+# 向量库缓存、文档附件
+evaluation_module/output/
+backend_django/upload_files/
