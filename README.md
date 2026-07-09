@@ -18,8 +18,11 @@ AI智能体：LangChain、Milvus向量库、Function Calling、多Agent协同调
 ## 快速部署
 1. 环境依赖：Docker & Docker Compose
 2. 启动命令：
-cd deploy && docker-compose up -d
-3. 后台地址：http://127.0.0.1:8080
+```bash
+cd deploy && cp .env.example .env   # 首次部署
+cd deploy && docker compose up -d
+```
+3. 后台地址：http://127.0.0.1:80 （Nginx 统一入口，网关前缀 `/gateway/v1/`）
 ## 项目架构图
 （此处放架构图片，后续画好放入docs/img）
 ## 开发计划（暑期待优化）
